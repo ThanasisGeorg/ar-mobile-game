@@ -21,8 +21,6 @@ public class EnemyHealth : MonoBehaviour
 
     currentHealth = Mathf.Max(currentHealth, 0);
 
-    Debug.Log("HP: " + currentHealth);
-
     if (currentHealth <= 0)
     {
       isDead = true;
