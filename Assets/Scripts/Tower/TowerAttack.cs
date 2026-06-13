@@ -2,106 +2,62 @@ using UnityEngine;
 
 public class TowerAttack : MonoBehaviour
 {
-    public float attackRange = 8f;
-    public float attackDamage = 10f;
-    public float attackFireRate = 2f;
-    
-    [Header("Range Display")]
-    public bool showRangeCircle = true;
-    public Color rangeCircleColor = new Color(0, 1, 0, 0.3f);
-    public int circleSegments = 64;
-    public float circleHeightOffset = -0.5f;
+  public float range = 5f;
+  public float fireRate = 1f;
 
-    public GameObject enemy;
+  public GameObject bulletPrefab;
+  public Transform firePoint;
 
-    private float timer;
-    private int attackCounter = 0;
-    private LineRenderer rangeIndicator;
+  private Transform currentTarget;
+  private float timer;
 
-    void Attack(float counter)
+  void Update()
+  {
+    FindTarget();
+
+    if (currentTarget == null)
+      return;
+
+    timer += Time.deltaTime;
+
+    if (timer >= fireRate)
     {
-        Debug.Log("Attack " + counter + ": " + attackDamage + " damage!");
-        timer = 0f;
+      Shoot();
+      timer = 0f;
+    }
+  }
+
+  void FindTarget()
+  {
+    GameObject[] enemies = GameObject.FindGameObjectsWithTag("Enemy");
+
+    float shortestDistance = Mathf.Infinity;
+    GameObject nearestEnemy = null;
+
+    foreach (GameObject enemy in enemies)
+    {
+      float distance = Vector3.Distance(transform.position, enemy.transform.position);
+
+      if (distance < shortestDistance && distance <= range)
+      {
+        shortestDistance = distance;
+        nearestEnemy = enemy;
+      }
     }
 
-    void Start()
+    if (nearestEnemy != null)
     {
-        if (showRangeCircle)
-        {
-            InitializeRangeIndicator();
-        }
+      currentTarget = nearestEnemy.transform;
     }
-
-    void InitializeRangeIndicator()
+    else
     {
-        // Create a new GameObject for the line renderer
-        GameObject rangeIndicatorGO = new GameObject("RangeIndicator");
-        rangeIndicatorGO.transform.SetParent(transform);
-        rangeIndicatorGO.transform.localPosition = new Vector3(0, circleHeightOffset, 0);
-
-        rangeIndicator = rangeIndicatorGO.AddComponent<LineRenderer>();
-        rangeIndicator.useWorldSpace = false;
-        rangeIndicator.positionCount = circleSegments + 1;
-        rangeIndicator.startColor = rangeCircleColor;
-        rangeIndicator.endColor = rangeCircleColor;
-        rangeIndicator.startWidth = 0.1f;
-        rangeIndicator.endWidth = 0.1f;
-
-        // Generate circle points
-        Vector3[] positions = new Vector3[circleSegments + 1];
-        for (int i = 0; i <= circleSegments; i++)
-        {
-            float angle = (i / (float)circleSegments) * 2f * Mathf.PI;
-            positions[i] = new Vector3(
-                Mathf.Cos(angle) * attackRange,
-                0f,
-                Mathf.Sin(angle) * attackRange
-            );
-        }
-        rangeIndicator.SetPositions(positions);
+      currentTarget = null;
     }
+  }
 
-
-    // Update is called once per frame
-    void Update()
-    {
-        if (enemy == null) return;
-
-        float distanceToEnemy = Vector3.Distance(transform.position, enemy.transform.position);
-        if (distanceToEnemy <= attackRange)
-        {
-            Debug.Log("Enemy in range!");
-            timer += Time.deltaTime;
-            if (timer >= attackFireRate)
-            {
-                attackCounter++;
-                Attack(attackCounter);
-            }
-        }
-
-    }
-
-    void OnDrawGizmos()
-    {
-        // Draw range circle in the editor
-        Gizmos.color = new Color(0, 1, 0, 0.5f);
-        Vector3 gizmoCenter = transform.position + new Vector3(0, circleHeightOffset, 0);
-        DrawCircleGizmo(gizmoCenter, attackRange, circleSegments);
-    }
-
-    void DrawCircleGizmo(Vector3 center, float radius, int segments)
-    {
-        float angle = 0f;
-        float angleStep = 360f / segments;
-        Vector3 prevPos = center + new Vector3(radius, 0, 0);
-
-        for (int i = 0; i <= segments; i++)
-        {
-            float rad = angle * Mathf.Deg2Rad;
-            Vector3 newPos = center + new Vector3(Mathf.Cos(rad) * radius, 0, Mathf.Sin(rad) * radius);
-            Gizmos.DrawLine(prevPos, newPos);
-            prevPos = newPos;
-            angle += angleStep;
-        }
-    }
+  void Shoot()
+  {
+    GameObject bullet = Instantiate(bulletPrefab, firePoint.position, Quaternion.identity);
+    bullet.GetComponent<Bullet>().SetTarget(currentTarget);
+  }
 }
