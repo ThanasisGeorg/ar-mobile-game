@@ -21,7 +21,7 @@ public class TowerPlacement : MonoBehaviour
   {
     UpdateGhost();
 
-    if (Mouse.current.leftButton.wasPressedThisFrame)
+    if (Touchscreen.current != null && Touchscreen.current.primaryTouch.press.wasPressedThisFrame)
     {
       PlaceTower();
     }
@@ -29,7 +29,11 @@ public class TowerPlacement : MonoBehaviour
 
   void UpdateGhost()
   {
-    Ray ray = cam.ScreenPointToRay(Mouse.current.position.ReadValue());
+    if (Touchscreen.current == null) return;
+
+    Vector2 touchPos = Touchscreen.current.primaryTouch.position.ReadValue();
+
+    Ray ray = cam.ScreenPointToRay(touchPos);
 
     if (Physics.Raycast(ray, out RaycastHit hit))
     {
@@ -46,7 +50,9 @@ public class TowerPlacement : MonoBehaviour
     if (!GameEconomy.Instance.SpendCoins(towerCost))
       return;
 
-    Instantiate(towerPrefab, ghostInstance.transform.position, Quaternion.identity);
+    Vector3 pos = ghostInstance.transform.position;
+
+    Instantiate(towerPrefab, pos, Quaternion.identity);
   }
 
   Vector3 SnapToGrid(Vector3 position)
@@ -54,6 +60,6 @@ public class TowerPlacement : MonoBehaviour
     float x = Mathf.Round(position.x / gridSize) * gridSize;
     float z = Mathf.Round(position.z / gridSize) * gridSize;
 
-    return new Vector3(x, 1f, z);
+    return new Vector3(x, 0f, z);
   }
 }
