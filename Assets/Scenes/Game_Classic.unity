@@ -274,10 +274,9 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::TowerAttack
   range: 8
-  fireRate: 1
-  firePoint: {fileID: 280643032}
-  enemy: {fileID: 5461824695569170607, guid: 02e2187bc0e4ca942b85c0077d258800, type: 3}
+  fireRate: 0.5
   bulletPrefab: {fileID: 4964548257712331200, guid: 54e2ed12e5f96db4a90df034396b2f8a, type: 3}
+  firePoint: {fileID: 280643032}
 --- !u!1 &63838550
 GameObject:
   m_ObjectHideFlags: 0
@@ -749,6 +748,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::WaveManager
   enemyPrefab: {fileID: 5461824695569170607, guid: 02e2187bc0e4ca942b85c0077d258800, type: 3}
   spawnPoint: {fileID: 606385719}
+  target: {fileID: 238204339}
   enemiesPerWave: 5
   spawnInterval: 1
   timeBetweenWaves: 5

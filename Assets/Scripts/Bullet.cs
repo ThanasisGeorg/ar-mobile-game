@@ -4,8 +4,10 @@ public class Bullet : MonoBehaviour
 {
   public float speed = 10f;
   public int damage = 25;
+  public float hitDistance = 0.2f;
 
   private Transform target;
+  private bool hasHit;
 
   public void SetTarget(Transform enemy)
   {
@@ -14,31 +16,67 @@ public class Bullet : MonoBehaviour
 
   void Update()
   {
+    if (hasHit)
+      return;
+
     if (target == null)
     {
       Destroy(gameObject);
       return;
     }
 
-    transform.position = Vector3.MoveTowards(
-        transform.position,
-        target.position,
-        speed * Time.deltaTime
-    );
+    Vector3 direction = target.position - transform.position;
+    float distanceThisFrame = speed * Time.deltaTime;
 
-    if (Vector3.Distance(transform.position, target.position) < 0.1f)
+    if (direction.magnitude <= Mathf.Max(distanceThisFrame, hitDistance))
     {
-      HitTarget();
+      HitTarget(target.GetComponentInParent<EnemyHealth>());
+      return;
+    }
+
+    transform.Translate(direction.normalized * distanceThisFrame, Space.World);
+  }
+
+  void OnTriggerEnter(Collider other)
+  {
+    if (hasHit)
+      return;
+
+    EnemyHealth health = other.GetComponentInParent<EnemyHealth>();
+
+    if (health != null)
+    {
+      HitTarget(health);
     }
   }
 
-  void HitTarget()
+  void OnCollisionEnter(Collision collision)
   {
-    EnemyHealth health = target.GetComponent<EnemyHealth>();
+    if (hasHit)
+      return;
+
+    EnemyHealth health = collision.collider.GetComponentInParent<EnemyHealth>();
+
+    if (health != null)
+    {
+      HitTarget(health);
+    }
+  }
+
+  void HitTarget(EnemyHealth health)
+  {
+    if (hasHit)
+      return;
+
+    hasHit = true;
 
     if (health != null)
     {
       health.TakeDamage(damage);
+    }
+    else
+    {
+      Debug.LogWarning("EnemyHealth component not found on target.");
     }
 
     Destroy(gameObject);
