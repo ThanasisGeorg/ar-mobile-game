@@ -7,6 +7,7 @@ public class TowerPlacement : MonoBehaviour
   public GameObject ghostPrefab;
   public Camera cam;
 
+  public int towerCost = 20;
   public float gridSize = 1f;
 
   private GameObject ghostInstance;
@@ -42,6 +43,9 @@ public class TowerPlacement : MonoBehaviour
 
   void PlaceTower()
   {
+    if (!GameEconomy.Instance.SpendCoins(towerCost))
+      return;
+
     Instantiate(towerPrefab, ghostInstance.transform.position, Quaternion.identity);
   }
 

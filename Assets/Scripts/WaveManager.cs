@@ -6,12 +6,14 @@ public class WaveManager : MonoBehaviour
   public GameObject enemyPrefab;
   public Transform spawnPoint;
   public Transform target;
+  
+  private int waveIndex = 0;
 
   public int enemiesPerWave = 5;
   public float spawnInterval = 1f;
   public float timeBetweenWaves = 5f;
+  public int CurrentWave => waveIndex;
 
-  private int waveIndex = 0;
 
   void Start()
   {

@@ -3,7 +3,7 @@ using UnityEngine;
 public class TowerAttack : MonoBehaviour
 {
   public float range = 5f;
-  public float fireRate = 1f;
+  public float fireRate = 1.5f;
 
   public GameObject bulletPrefab;
   public Transform firePoint;
