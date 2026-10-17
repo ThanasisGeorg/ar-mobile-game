@@ -75,6 +75,7 @@ mono_crash.*
 
 # Unity Burst debug artifacts
 /ar-mobile-game_BurstDebugInformation_DoNotShip/
+/ar-mobile-game_BackUpThisFolder_ButDontShipItWithYourGame/
 
 # Unity performance test output
 /Assets/Resources/PerformanceTestRunInfo.json
