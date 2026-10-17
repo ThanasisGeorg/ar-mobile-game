@@ -98,6 +98,10 @@ public static class UIFactory
   {
     RectTransform rt = Rect("Text", parent);
     TextMeshProUGUI tmp = rt.gameObject.AddComponent<TextMeshProUGUI>();
+
+    if (GameFonts.UI != null)
+      tmp.font = GameFonts.UI;
+
     tmp.text = text;
     tmp.fontSize = size;
     tmp.color = color;

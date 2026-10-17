@@ -169,3 +169,7 @@ Packages/packages-lock.json linguist-generated
 
 # Exceptions for .asset files such as lightning pre-baking
 LightingData.asset     binary
+
+# UI font with Greek glyphs: stored as a normal git file (not LFS) so the game
+# shows Greek text even when the repository is cloned without Git LFS.
+Assets/Resources/Fonts/*.ttf -filter -diff -merge binary
