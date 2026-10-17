@@ -116,3 +116,8 @@ InitTestScene*.unity*
 
 # Auto-generated cache in Assets folder
 /[Aa]ssets/[Ss]ceneDependencyCache*
+# Analysis outputs (study data must not be committed: it contains participant data)
+/Analysis/results/
+/Analysis/synthetic_data/
+/Analysis/data/
+__pycache__/

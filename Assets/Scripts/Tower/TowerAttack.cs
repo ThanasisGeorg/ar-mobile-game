@@ -15,10 +15,11 @@ public class TowerAttack : MonoBehaviour
   {
     FindTarget();
 
+    // The tower is "loaded" while idle so it fires as soon as an enemy comes in range.
+    timer = Mathf.Min(timer + Time.deltaTime, fireRate);
+
     if (currentTarget == null)
       return;
-
-    timer += Time.deltaTime;
 
     if (timer >= fireRate)
     {
@@ -29,35 +30,38 @@ public class TowerAttack : MonoBehaviour
 
   void FindTarget()
   {
-    GameObject[] enemies = GameObject.FindGameObjectsWithTag("Enemy");
+    // Aim at the enemy that walked furthest (closest to the base) within range.
+    float bestProgress = -1f;
+    EnemyHealth bestEnemy = null;
 
-    float shortestDistance = Mathf.Infinity;
-    GameObject nearestEnemy = null;
-
-    foreach (GameObject enemy in enemies)
+    foreach (EnemyHealth enemy in WaveManager.ActiveEnemies)
     {
-      float distance = Vector3.Distance(transform.position, enemy.transform.position);
+      if (enemy == null)
+        continue;
 
-      if (distance < shortestDistance && distance <= range)
+      Vector3 offset = enemy.transform.position - transform.position;
+      offset.y = 0f;
+
+      if (offset.magnitude > range)
+        continue;
+
+      EnemyMovement movement = enemy.GetComponent<EnemyMovement>();
+      float progress = movement != null ? movement.DistanceTravelled : 0f;
+
+      if (progress > bestProgress)
       {
-        shortestDistance = distance;
-        nearestEnemy = enemy;
+        bestProgress = progress;
+        bestEnemy = enemy;
       }
     }
 
-    if (nearestEnemy != null)
-    {
-      currentTarget = nearestEnemy.transform;
-    }
-    else
-    {
-      currentTarget = null;
-    }
+    currentTarget = bestEnemy != null ? bestEnemy.transform : null;
   }
 
   void Shoot()
   {
-    GameObject bullet = Instantiate(bulletPrefab, firePoint.position, Quaternion.identity);
+    Transform origin = firePoint != null ? firePoint : transform;
+    GameObject bullet = Instantiate(bulletPrefab, origin.position, Quaternion.identity);
     bullet.GetComponent<Bullet>().SetTarget(currentTarget);
   }
 }

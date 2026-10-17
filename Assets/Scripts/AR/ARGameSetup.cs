@@ -1,0 +1,329 @@
+using System;
+using System.Collections;
+using System.Collections.Generic;
+using System.Linq;
+using System.Reflection;
+using Unity.XR.CoreUtils;
+using UnityEngine;
+using UnityEngine.InputSystem;
+using UnityEngine.Rendering;
+using UnityEngine.Rendering.Universal;
+using UnityEngine.XR.ARFoundation;
+using UnityEngine.XR.ARSubsystems;
+
+// Builds the AR Foundation rig at runtime and drives the AR-specific flow:
+// scan for a horizontal surface -> tap to place the battlefield -> play.
+//
+// The battlefield keeps exactly the same size in world units as in the classic
+// version (so gameplay code and balance are identical); it is shown at table-top
+// size by scaling the XR Origin, the standard AR Foundation technique for
+// "scaling content" without touching the content itself.
+public class ARGameSetup : MonoBehaviour
+{
+  public float boardWidthMeters = 0.9f;
+
+  public Camera ARCamera { get; private set; }
+
+  private XROrigin origin;
+  private ARRaycastManager raycastManager;
+  private ARPlaneManager planeManager;
+  private LevelLayout level;
+  private GameManager gm;
+  private GameHUD hud;
+  private SessionTelemetry telemetry;
+  private Transform reticle;
+
+  private bool supported = true;
+  private bool hasPlane;
+  private bool boardPlaced;
+  private bool gameStarted;
+
+  static readonly List<ARRaycastHit> hits = new List<ARRaycastHit>();
+
+  float WorldUnitsPerMeter => level.BoardWidth / boardWidthMeters;
+
+  public static ARGameSetup Create(LevelLayout level)
+  {
+    EnsureBackgroundRendererFeature();
+
+    GameObject sessionGO = new GameObject("AR Session");
+    sessionGO.AddComponent<ARSession>();
+    sessionGO.AddComponent<ARInputManager>();
+
+    GameObject originGO = new GameObject("XR Origin (AR)");
+    originGO.SetActive(false);
+
+    GameObject offset = new GameObject("Camera Offset");
+    offset.transform.SetParent(originGO.transform, false);
+
+    GameObject cameraGO = new GameObject("AR Camera");
+    cameraGO.tag = "MainCamera";
+    cameraGO.transform.SetParent(offset.transform, false);
+
+    Camera cam = cameraGO.AddComponent<Camera>();
+    cam.clearFlags = CameraClearFlags.SolidColor;
+    cam.backgroundColor = Color.black;
+    cam.nearClipPlane = 0.1f;
+    cam.farClipPlane = 2000f;
+
+    cameraGO.AddComponent<AudioListener>();
+    cameraGO.AddComponent<ARCameraManager>();
+    cameraGO.AddComponent<ARCameraBackground>();
+
+    var poseDriver = cameraGO.AddComponent<UnityEngine.InputSystem.XR.TrackedPoseDriver>();
+    poseDriver.positionInput = new InputActionProperty(CreatePoseAction("Position", "Vector3",
+        "<HandheldARInputDevice>/devicePosition", "<XRHMD>/centerEyePosition"));
+    poseDriver.rotationInput = new InputActionProperty(CreatePoseAction("Rotation", "Quaternion",
+        "<HandheldARInputDevice>/deviceRotation", "<XRHMD>/centerEyeRotation"));
+
+    XROrigin xrOrigin = originGO.AddComponent<XROrigin>();
+    xrOrigin.Camera = cam;
+    xrOrigin.CameraFloorOffsetObject = offset;
+    xrOrigin.CameraYOffset = 0f;
+
+    ARRaycastManager raycaster = originGO.AddComponent<ARRaycastManager>();
+    ARPlaneManager planes = originGO.AddComponent<ARPlaneManager>();
+    planes.requestedDetectionMode = PlaneDetectionMode.Horizontal;
+
+    ARGameSetup setup = originGO.AddComponent<ARGameSetup>();
+    setup.origin = xrOrigin;
+    setup.raycastManager = raycaster;
+    setup.planeManager = planes;
+    setup.level = level;
+    setup.ARCamera = cam;
+
+    originGO.transform.localScale = Vector3.one * setup.WorldUnitsPerMeter;
+    originGO.SetActive(true);
+
+    setup.reticle = CreateReticle(setup.WorldUnitsPerMeter);
+    level.gameObject.SetActive(false);
+
+    return setup;
+  }
+
+  public void Init(GameManager manager, GameHUD gameHud, SessionTelemetry sessionTelemetry)
+  {
+    gm = manager;
+    hud = gameHud;
+    telemetry = sessionTelemetry;
+
+    gm.StateChanged += OnStateChanged;
+    planeManager.trackablesChanged.AddListener(OnPlanesChanged);
+    ARSession.stateChanged += OnSessionStateChanged;
+
+    telemetry.SetPhysicalCamera(ARCamera.transform, WorldUnitsPerMeter, boardWidthMeters);
+
+    hud.SetStartAvailable(false);
+    hud.SetInstruction("Στρέψτε την κάμερα προς ένα τραπέζι ή το πάτωμα και κινήστε αργά το κινητό, ώστε να εντοπιστεί μια επίπεδη επιφάνεια.");
+  }
+
+  IEnumerator Start()
+  {
+    if (ARSession.state == ARSessionState.None || ARSession.state == ARSessionState.CheckingAvailability)
+      yield return ARSession.CheckAvailability();
+
+    if (ARSession.state == ARSessionState.Unsupported)
+    {
+      supported = false;
+      telemetry?.Log("ar_unsupported");
+      hud?.SetInstruction("Η συσκευή δεν υποστηρίζει Επαυξημένη Πραγματικότητα (Google Play Services for AR). " +
+          "Πατήστε «Μενού» για επιστροφή.");
+    }
+  }
+
+  void OnDestroy()
+  {
+    ARSession.stateChanged -= OnSessionStateChanged;
+
+    if (gm != null)
+      gm.StateChanged -= OnStateChanged;
+
+    if (planeManager != null)
+      planeManager.trackablesChanged.RemoveListener(OnPlanesChanged);
+  }
+
+  void Update()
+  {
+    if (!supported || gm == null || gameStarted)
+      return;
+
+    // Preview where the board would go (centre of the screen) until it is placed once.
+    if (!boardPlaced)
+    {
+      Vector2 center = new Vector2(Screen.width * 0.5f, Screen.height * 0.5f);
+      bool hitPlane = raycastManager.Raycast(center, hits, TrackableType.PlaneWithinPolygon);
+      reticle.gameObject.SetActive(hitPlane);
+
+      if (hitPlane)
+        reticle.SetPositionAndRotation(hits[0].pose.position + Vector3.up * 0.01f, Quaternion.identity);
+    }
+
+    if (gm.State != GameState.WaitingToStart)
+      return;
+
+    if (PointerInput.TryGetTap(out Vector2 tap, out bool overUI) && !overUI)
+    {
+      if (raycastManager.Raycast(tap, hits, TrackableType.PlaneWithinPolygon))
+      {
+        PlaceBoard(hits[0].pose);
+      }
+      else
+      {
+        hud.ShowToast(hasPlane ? "Πατήστε πάνω σε μια εντοπισμένη επιφάνεια" : "Δεν έχει εντοπιστεί ακόμη επιφάνεια");
+      }
+    }
+  }
+
+  void PlaceBoard(Pose hitPose)
+  {
+    Transform space = origin.TrackablesParent != null ? origin.TrackablesParent : origin.transform;
+
+    // Hit point and camera direction in session (real-world) space.
+    Vector3 sessionPoint = space.InverseTransformPoint(hitPose.position);
+    Vector3 cameraForward = space.InverseTransformDirection(ARCamera.transform.forward);
+    cameraForward.y = 0f;
+
+    if (cameraForward.sqrMagnitude < 0.0001f)
+      cameraForward = Vector3.forward;
+
+    // Rotate the world so the board faces the player (spawn on the left, base on the right).
+    float yaw = Mathf.Atan2(cameraForward.x, cameraForward.z) * Mathf.Rad2Deg;
+    Quaternion rotation = Quaternion.Euler(0f, -yaw, 0f);
+    float scale = WorldUnitsPerMeter;
+
+    // Move the origin so that the tapped point coincides with the board centre.
+    Vector3 boardCenter = level.transform.position;
+    origin.transform.localScale = Vector3.one * scale;
+    origin.transform.rotation = rotation;
+    origin.transform.position = boardCenter - rotation * (sessionPoint * scale);
+
+    level.gameObject.SetActive(true);
+    reticle.gameObject.SetActive(false);
+
+    if (!boardPlaced)
+    {
+      boardPlaced = true;
+      hud.SetStartAvailable(true);
+      hud.SetInstruction("Πατήστε σε άλλο σημείο για να μετακινήσετε το πεδίο. Πατήστε «Έναρξη» όταν είστε έτοιμοι. " +
+          "Στο παιχνίδι πατήστε στο χορτάρι για να χτίσετε πύργους και κινηθείτε γύρω από το πεδίο για καλύτερη θέα.");
+    }
+
+    telemetry.MarkBoardPlaced();
+  }
+
+  void OnPlanesChanged(ARTrackablesChangedEventArgs<ARPlane> changes)
+  {
+    foreach (ARPlane plane in changes.added)
+    {
+      AddPlaneVisual(plane);
+      plane.gameObject.SetActive(!gameStarted);
+    }
+
+    if (!hasPlane && changes.added.Count > 0)
+    {
+      hasPlane = true;
+      telemetry.MarkFirstPlane();
+
+      if (!boardPlaced)
+        hud.SetInstruction("Βρέθηκε επιφάνεια! Πατήστε πάνω της για να τοποθετήσετε το πεδίο της μάχης.");
+    }
+  }
+
+  static void AddPlaneVisual(ARPlane plane)
+  {
+    if (plane.GetComponent<MeshRenderer>() != null)
+      return;
+
+    plane.gameObject.AddComponent<MeshFilter>();
+    MeshRenderer renderer = plane.gameObject.AddComponent<MeshRenderer>();
+    renderer.sharedMaterial = GameMaterials.Transparent(new Color(1f, 1f, 1f, 0.2f));
+    renderer.shadowCastingMode = ShadowCastingMode.Off;
+    plane.gameObject.AddComponent<ARPlaneMeshVisualizer>();
+  }
+
+  void OnStateChanged(GameState state)
+  {
+    if (state != GameState.Playing || gameStarted)
+      return;
+
+    // Once the game starts, the board stays fixed: stop plane detection and hide plane visuals.
+    gameStarted = true;
+    reticle.gameObject.SetActive(false);
+    planeManager.SetTrackablesActive(false);
+    planeManager.enabled = false;
+  }
+
+  void OnSessionStateChanged(ARSessionStateChangedEventArgs args)
+  {
+    bool tracking = args.state == ARSessionState.SessionTracking;
+    telemetry?.MarkTracking(tracking, ARSession.notTrackingReason.ToString());
+
+    if (gm == null || !gameStarted)
+      return;
+
+    // Pause the game while the device has lost tracking: the board would otherwise drift.
+    gm.SetSystemPause(!tracking && gm.State == GameState.Playing,
+        "Χάθηκε η παρακολούθηση του χώρου.\nΣτρέψτε την κάμερα προς το πεδίο και κινήστε αργά το κινητό.");
+  }
+
+  static InputAction CreatePoseAction(string name, string controlType, params string[] bindings)
+  {
+    InputAction action = new InputAction(name, InputActionType.Value, expectedControlType: controlType);
+
+    foreach (string binding in bindings)
+      action.AddBinding(binding);
+
+    return action;
+  }
+
+  static Transform CreateReticle(float unitsPerMeter)
+  {
+    GameObject reticle = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
+    reticle.name = "Placement Reticle";
+    Destroy(reticle.GetComponent<Collider>());
+
+    float size = 0.12f * unitsPerMeter;
+    reticle.transform.localScale = new Vector3(size, 0.002f * unitsPerMeter, size);
+    reticle.GetComponent<Renderer>().sharedMaterial = GameMaterials.Transparent(new Color(0.3f, 0.8f, 1f, 0.6f));
+    reticle.SetActive(false);
+    return reticle.transform;
+  }
+
+  // URP needs the "AR Background Renderer Feature" to draw the camera image. The editor
+  // setup (Tools > AR Tower Defense > Setup Project) adds it to the renderer assets; this is
+  // a safety net for player builds made without running the setup.
+  static void EnsureBackgroundRendererFeature()
+  {
+#if !UNITY_EDITOR
+    try
+    {
+      Type featureType = Type.GetType("UnityEngine.XR.ARFoundation.ARBackgroundRendererFeature, Unity.XR.ARFoundation");
+      var pipeline = GraphicsSettings.currentRenderPipeline as UniversalRenderPipelineAsset;
+
+      if (featureType == null || pipeline == null)
+        return;
+
+      FieldInfo field = typeof(UniversalRenderPipelineAsset).GetField("m_RendererDataList", BindingFlags.NonPublic | BindingFlags.Instance);
+
+      if (!(field?.GetValue(pipeline) is ScriptableRendererData[] renderers))
+        return;
+
+      foreach (ScriptableRendererData data in renderers)
+      {
+        if (data == null || data.rendererFeatures.Any(f => f != null && f.GetType() == featureType))
+          continue;
+
+        var feature = (ScriptableRendererFeature)ScriptableObject.CreateInstance(featureType);
+        feature.name = "AR Background Renderer Feature";
+        data.rendererFeatures.Add(feature);
+        data.SetDirty();
+        Debug.LogWarning("AR Background Renderer Feature was missing from " + data.name + " and was added at runtime.");
+      }
+    }
+    catch (Exception e)
+    {
+      Debug.LogWarning("Could not verify the AR Background Renderer Feature: " + e.Message);
+    }
+#endif
+  }
+}
