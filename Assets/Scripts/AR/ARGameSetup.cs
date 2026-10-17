@@ -25,6 +25,8 @@ public class ARGameSetup : MonoBehaviour
   public Camera ARCamera { get; private set; }
 
   private XROrigin origin;
+  private ARSession session;
+  private ARCameraManager cameraManager;
   private ARRaycastManager raycastManager;
   private ARPlaneManager planeManager;
   private LevelLayout level;
@@ -38,6 +40,11 @@ public class ARGameSetup : MonoBehaviour
   private bool boardPlaced;
   private bool gameStarted;
 
+  // Diagnostics (shown on screen until the game starts, to troubleshoot a black camera image)
+  private int cameraFrames;
+  private string permissionStatus = "-";
+  private float diagnosticsTimer;
+
   static readonly List<ARRaycastHit> hits = new List<ARRaycastHit>();
 
   float WorldUnitsPerMeter => level.BoardWidth / boardWidthMeters;
@@ -46,8 +53,10 @@ public class ARGameSetup : MonoBehaviour
   {
     EnsureBackgroundRendererFeature();
 
+    // The session starts disabled and is enabled once camera permission is granted (see Start).
     GameObject sessionGO = new GameObject("AR Session");
-    sessionGO.AddComponent<ARSession>();
+    sessionGO.SetActive(false);
+    ARSession arSession = sessionGO.AddComponent<ARSession>();
     sessionGO.AddComponent<ARInputManager>();
 
     GameObject originGO = new GameObject("XR Origin (AR)");
@@ -67,7 +76,7 @@ public class ARGameSetup : MonoBehaviour
     cam.farClipPlane = 2000f;
 
     cameraGO.AddComponent<AudioListener>();
-    cameraGO.AddComponent<ARCameraManager>();
+    ARCameraManager arCameraManager = cameraGO.AddComponent<ARCameraManager>();
     cameraGO.AddComponent<ARCameraBackground>();
 
     var poseDriver = cameraGO.AddComponent<UnityEngine.InputSystem.XR.TrackedPoseDriver>();
@@ -91,6 +100,8 @@ public class ARGameSetup : MonoBehaviour
     setup.planeManager = planes;
     setup.level = level;
     setup.ARCamera = cam;
+    setup.session = arSession;
+    setup.cameraManager = arCameraManager;
 
     originGO.transform.localScale = Vector3.one * setup.WorldUnitsPerMeter;
     originGO.SetActive(true);
@@ -119,6 +130,21 @@ public class ARGameSetup : MonoBehaviour
 
   IEnumerator Start()
   {
+    cameraManager.frameReceived += OnCameraFrame;
+
+    yield return RequestCameraPermission();
+
+    if (permissionStatus == "denied")
+    {
+      supported = false;
+      telemetry?.Log("ar_camera_permission_denied");
+      hud?.SetInstruction("Δεν δόθηκε άδεια χρήσης της κάμερας. Επιτρέψτε την από τις Ρυθμίσεις → Εφαρμογές → " +
+          Application.productName + " → Άδειες και ξανανοίξτε την έκδοση AR.");
+      yield break;
+    }
+
+    session.gameObject.SetActive(true);
+
     if (ARSession.state == ARSessionState.None || ARSession.state == ARSessionState.CheckingAvailability)
       yield return ARSession.CheckAvailability();
 
@@ -131,9 +157,83 @@ public class ARGameSetup : MonoBehaviour
     }
   }
 
+  IEnumerator RequestCameraPermission()
+  {
+#if UNITY_ANDROID && !UNITY_EDITOR
+    if (UnityEngine.Android.Permission.HasUserAuthorizedPermission(UnityEngine.Android.Permission.Camera))
+    {
+      permissionStatus = "granted";
+      yield break;
+    }
+
+    permissionStatus = "requested";
+    var callbacks = new UnityEngine.Android.PermissionCallbacks();
+    callbacks.PermissionGranted += _ => permissionStatus = "granted";
+    callbacks.PermissionDenied += _ => permissionStatus = "denied";
+    callbacks.PermissionDeniedAndDontAskAgain += _ => permissionStatus = "denied";
+    UnityEngine.Android.Permission.RequestUserPermission(UnityEngine.Android.Permission.Camera, callbacks);
+
+    while (permissionStatus == "requested")
+      yield return null;
+#else
+    permissionStatus = "n/a";
+    yield break;
+#endif
+  }
+
+  void OnCameraFrame(ARCameraFrameEventArgs args)
+  {
+    cameraFrames++;
+  }
+
+  void LateUpdate()
+  {
+    if (hud == null || gameStarted)
+      return;
+
+    diagnosticsTimer -= Time.unscaledDeltaTime;
+
+    if (diagnosticsTimer > 0f)
+      return;
+
+    diagnosticsTimer = 0.5f;
+    hud.SetDebugText(Diagnostics());
+  }
+
+  string Diagnostics()
+  {
+    var pipeline = GraphicsSettings.currentRenderPipeline as UniversalRenderPipelineAsset;
+    string feature = "?";
+
+    try
+    {
+      FieldInfo field = typeof(UniversalRenderPipelineAsset).GetField("m_RendererDataList", BindingFlags.NonPublic | BindingFlags.Instance);
+
+      if (pipeline != null && field?.GetValue(pipeline) is ScriptableRendererData[] renderers && renderers.Length > 0 && renderers[0] != null)
+        feature = renderers[0].rendererFeatures.Any(f => f != null && f.GetType().Name == "ARBackgroundRendererFeature") ? "yes" : "NO";
+    }
+    catch (Exception)
+    {
+    }
+
+    ARCameraBackground background = ARCamera.GetComponent<ARCameraBackground>();
+
+    return "AR session: " + ARSession.state +
+        "  |  tracking: " + ARSession.notTrackingReason +
+        "  |  camera permission: " + permissionStatus +
+        "\ncamera frames: " + cameraFrames +
+        "  |  background: " + (background != null && background.enabled ? "on" : "off") +
+        "  |  AR renderer feature: " + feature +
+        "  |  pipeline: " + (pipeline != null ? pipeline.name : "none") +
+        "  |  graphics: " + SystemInfo.graphicsDeviceType;
+  }
+
   void OnDestroy()
   {
     ARSession.stateChanged -= OnSessionStateChanged;
+
+    if (cameraManager != null)
+      cameraManager.frameReceived -= OnCameraFrame;
 
     if (gm != null)
       gm.StateChanged -= OnStateChanged;
@@ -248,6 +348,7 @@ public class ARGameSetup : MonoBehaviour
 
     // Once the game starts, the board stays fixed: stop plane detection and hide plane visuals.
     gameStarted = true;
+    hud.SetDebugText("");
     reticle.gameObject.SetActive(false);
     planeManager.SetTrackablesActive(false);
     planeManager.enabled = false;
