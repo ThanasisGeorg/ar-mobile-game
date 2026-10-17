@@ -21,6 +21,7 @@ public class GameHUD : MonoBehaviour
   private TextMeshProUGUI countdownText;
   private TextMeshProUGUI toastText;
   private TextMeshProUGUI instructionText;
+  private TextMeshProUGUI debugText;
   private Image instructionPanel;
   private Button startButton;
   private Button pauseButton;
@@ -188,6 +189,20 @@ public class GameHUD : MonoBehaviour
   {
     instructionText.text = text;
     RefreshPanels();
+  }
+
+  // Small diagnostic line (used by the AR version before the game starts).
+  public void SetDebugText(string text)
+  {
+    if (debugText == null)
+    {
+      debugText = UIFactory.Text(safeArea, "", 22f, new Color(1f, 1f, 0.6f), TextAlignmentOptions.TopLeft);
+      UIFactory.Place(debugText.rectTransform, new Vector2(0f, 1f), new Vector2(0f, 1f), new Vector2(20f, -230f), new Vector2(1800f, 80f));
+      debugText.outlineWidth = 0.2f;
+      debugText.outlineColor = Color.black;
+    }
+
+    debugText.text = text;
   }
 
   public void SetStartAvailable(bool available)
