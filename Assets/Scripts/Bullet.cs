@@ -9,6 +9,18 @@ public class Bullet : MonoBehaviour
   private Transform target;
   private bool hasHit;
 
+  void Awake()
+  {
+    // Bullets are moved by code; physics must not pull them down or push them around.
+    Rigidbody body = GetComponent<Rigidbody>();
+
+    if (body != null)
+    {
+      body.isKinematic = true;
+      body.useGravity = false;
+    }
+  }
+
   public void SetTarget(Transform enemy)
   {
     target = enemy;
