@@ -80,6 +80,47 @@ public static class ProjectSetup
     Debug.Log("[Setup] Game_AR now contains AR Session and XR Origin (Mobile AR).");
   }
 
+  // Diagnostic: an AR scene with only Unity's AR Session + XR Origin and a cube, no game code.
+  // It becomes the only build scene; "Restore Game Build Scenes" puts the game scenes back.
+  [MenuItem("Tools/AR Tower Defense/Diagnostics/Create AR Test Scene (only scene in build)")]
+  public static void CreateARTestScene()
+  {
+    if (!UnityEditor.SceneManagement.EditorSceneManager.SaveCurrentModifiedScenesIfUserWantsTo())
+      return;
+
+    var scene = UnityEditor.SceneManagement.EditorSceneManager.NewScene(
+        UnityEditor.SceneManagement.NewSceneSetup.EmptyScene, UnityEditor.SceneManagement.NewSceneMode.Single);
+
+    GameObject light = new GameObject("Directional Light");
+    light.AddComponent<Light>().type = LightType.Directional;
+    light.transform.rotation = Quaternion.Euler(50f, -30f, 0f);
+
+    if (!EditorApplication.ExecuteMenuItem("GameObject/XR/AR Session") ||
+        !EditorApplication.ExecuteMenuItem("GameObject/XR/XR Origin (Mobile AR)"))
+    {
+      Debug.LogError("[Setup] Could not create the AR rig. Add GameObject > XR > AR Session and XR Origin (Mobile AR) manually.");
+      return;
+    }
+
+    // A 10 cm cube half a metre in front of the starting position.
+    GameObject cube = GameObject.CreatePrimitive(PrimitiveType.Cube);
+    cube.name = "Test Cube";
+    cube.transform.position = new Vector3(0f, 0f, 0.5f);
+    cube.transform.localScale = Vector3.one * 0.1f;
+
+    const string path = "Assets/Scenes/ARTest.unity";
+    UnityEditor.SceneManagement.EditorSceneManager.SaveScene(scene, path);
+    EditorBuildSettings.scenes = new[] { new EditorBuildSettingsScene(path, true) };
+    Debug.Log("[Setup] ARTest scene created and set as the ONLY build scene. Build And Run, then use " +
+        "Tools > AR Tower Defense > Diagnostics > Restore Game Build Scenes.");
+  }
+
+  [MenuItem("Tools/AR Tower Defense/Diagnostics/Restore Game Build Scenes")]
+  public static void RestoreBuildScenes()
+  {
+    EnsureBuildScenes();
+  }
+
   [MenuItem("Tools/AR Tower Defense/Open Study Data Folder")]
   public static void OpenDataFolder()
   {
