@@ -87,9 +87,10 @@ python analyze_ux.py --data data --out results     # παράγει results/repo
 2. Με το πρώτο άνοιγμα, το editor script `Assets/Editor/ProjectSetup.cs` προσθέτει αυτόματα:
    - τις σκηνές `MainMenu`, `Game_Classic`, `Game_AR` στο Build Profile,
    - το **AR Background Renderer Feature** στους URP renderers (χωρίς αυτό η κάμερα του κινητού δεν εμφανίζεται).
-3. Εκτελέστε το **Tools → AR Tower Defense → Setup Project**. Ρυθμίζει για Android OpenGLES3, landscape, IL2CPP/ARM64 και min SDK 29.
-4. Ελέγξτε το **Project Settings → XR Plug-in Management → Android** (το ARCore είναι ήδη ενεργό) και το **Project Validation**.
-5. Στο **File → Build Profiles → Android**: *Switch Platform* και μετά *Build And Run*.
+3. Εκτελέστε το **Tools → AR Tower Defense → Setup Project**. Ρυθμίζει για Android OpenGLES3, landscape, IL2CPP/ARM64, min SDK 29 και Application Entry Point = Activity.
+4. Εκτελέστε (μία φορά) το **Tools → AR Tower Defense → Add AR Rig To Game_AR Scene**. Προσθέτει στη σκηνή `Game_AR` τα έτοιμα αντικείμενα του Unity **AR Session** και **XR Origin (Mobile AR)** και αποθηκεύει τη σκηνή. Κάντε commit το `Game_AR.unity`.
+5. Ελέγξτε το **Project Settings → XR Plug-in Management → Android** (το ARCore είναι ήδη ενεργό) και το **Project Validation**.
+6. Στο **File → Build Profiles → Android**: *Switch Platform* και μετά *Build And Run*.
 
 ### Δοκιμή στον editor
 
@@ -99,7 +100,8 @@ python analyze_ux.py --data data --out results     # παράγει results/repo
 
 ## Αρχιτεκτονική κώδικα
 
-Οι σκηνές **δεν απαιτούν χειροκίνητη ρύθμιση**. Ο `SceneBootstrapper` στήνει κάθε σκηνή από κώδικα όταν φορτώνει.
+Ο `SceneBootstrapper` στήνει από κώδικα την πίστα, το UI και τους managers όταν φορτώνει κάθε σκηνή.
+Εξαίρεση είναι το AR rig (AR Session, XR Origin με κάμερα): αυτό είναι τα έτοιμα αντικείμενα του Unity στη σκηνή `Game_AR`.
 
 ```
 Assets/Scripts/
@@ -107,7 +109,7 @@ Assets/Scripts/
 ├── Level/       LevelBuilder (κοινή πίστα), LevelLayout (grid, διαδρομή, επιτρεπτά κελιά), GameMaterials
 ├── Input/       PointerInput: ενιαία αγγίγματα/ποντίκι (tap, drag, pinch) για τις δύο εκδόσεις
 ├── Classic/     ClassicCameraController: pan/zoom εικονικής κάμερας
-├── AR/          ARGameSetup: ARSession, XR Origin, ανίχνευση επιπέδων, τοποθέτηση πεδίου, tracking
+├── AR/          ARGameSetup: ανίχνευση επιπέδων, τοποθέτηση πεδίου, tracking (πάνω στο AR rig της σκηνής)
 ├── Tower/       TowerPlacement (χτίσιμο με έλεγχο εγκυρότητας), TowerAttack
 ├── Enemy/       EnemyMovement (waypoints), EnemyHealth, EnemyHealthBar
 ├── UI/          GameHUD, MainMenuUI, QuestionnaireUI, UIFactory, SafeAreaFitter
@@ -120,5 +122,5 @@ Assets/Scripts/
 | `GameManager` | Καταστάσεις (`WaitingToStart`, `Playing`, `Paused`, `Victory`, `Defeat`, `Aborted`), ζωή βάσης, παύση συστήματος (π.χ. απώλεια tracking) |
 | `WaveManager` | 10 κύματα, κλιμάκωση δυσκολίας, λίστα ενεργών εχθρών, συνθήκη νίκης |
 | `TowerPlacement` | Raycast μόνο στο collider του πεδίου, κούμπωμα στο grid, απαγόρευση χτισίματος στη διαδρομή, ορατή προεπισκόπηση |
-| `ARGameSetup` | Δημιουργεί το AR rig σε runtime και ρυθμίζει το XR Origin ώστε το σημείο που πάτησε ο χρήστης να γίνει το κέντρο του πεδίου, με το πεδίο στραμμένο προς αυτόν |
+| `ARGameSetup` | Χρησιμοποιεί το AR Session / XR Origin της σκηνής `Game_AR` και ρυθμίζει το XR Origin ώστε το σημείο που πάτησε ο χρήστης να γίνει το κέντρο του πεδίου, με το πεδίο στραμμένο προς αυτόν |
 | `SessionTelemetry` | Καταγραφή μετρικών και γεγονότων, εγγραφή CSV |

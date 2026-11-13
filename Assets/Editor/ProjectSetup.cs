@@ -44,6 +44,42 @@ public static class ProjectSetup
     Debug.Log("[Setup] Project configured for the AR / Classic tower defense study.");
   }
 
+  // Adds Unity's own AR Session and XR Origin (Mobile AR) to the AR scene. The game uses them
+  // instead of building the AR rig at runtime.
+  [MenuItem("Tools/AR Tower Defense/Add AR Rig To Game_AR Scene")]
+  public static void AddARRigToScene()
+  {
+    if (!UnityEditor.SceneManagement.EditorSceneManager.SaveCurrentModifiedScenesIfUserWantsTo())
+      return;
+
+    var scene = UnityEditor.SceneManagement.EditorSceneManager.OpenScene("Assets/Scenes/Game_AR.unity");
+
+    if (UnityEngine.Object.FindFirstObjectByType<UnityEngine.XR.ARFoundation.ARSession>() == null &&
+        !EditorApplication.ExecuteMenuItem("GameObject/XR/AR Session"))
+    {
+      Debug.LogError("[Setup] Could not create 'AR Session'. Add it manually: GameObject > XR > AR Session.");
+      return;
+    }
+
+    if (UnityEngine.Object.FindFirstObjectByType<Unity.XR.CoreUtils.XROrigin>() == null &&
+        !EditorApplication.ExecuteMenuItem("GameObject/XR/XR Origin (Mobile AR)"))
+    {
+      Debug.LogError("[Setup] Could not create 'XR Origin (Mobile AR)'. Add it manually: GameObject > XR > XR Origin (Mobile AR).");
+      return;
+    }
+
+    // The scene's original camera is replaced by the XR Origin's camera.
+    foreach (GameObject root in scene.GetRootGameObjects())
+    {
+      if (root.GetComponent<Camera>() != null && root.GetComponentInChildren<Unity.XR.CoreUtils.XROrigin>() == null)
+        UnityEngine.Object.DestroyImmediate(root);
+    }
+
+    UnityEditor.SceneManagement.EditorSceneManager.MarkSceneDirty(scene);
+    UnityEditor.SceneManagement.EditorSceneManager.SaveScene(scene);
+    Debug.Log("[Setup] Game_AR now contains AR Session and XR Origin (Mobile AR).");
+  }
+
   [MenuItem("Tools/AR Tower Defense/Open Study Data Folder")]
   public static void OpenDataFolder()
   {

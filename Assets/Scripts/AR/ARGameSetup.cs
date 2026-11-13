@@ -5,13 +5,13 @@ using System.Linq;
 using System.Reflection;
 using Unity.XR.CoreUtils;
 using UnityEngine;
-using UnityEngine.InputSystem;
 using UnityEngine.Rendering;
 using UnityEngine.Rendering.Universal;
 using UnityEngine.XR.ARFoundation;
 using UnityEngine.XR.ARSubsystems;
 
-// Builds the AR Foundation rig at runtime and drives the AR-specific flow:
+// Drives the AR-specific flow on top of Unity's "AR Session" and "XR Origin (Mobile AR)"
+// objects in Game_AR (added with Tools > AR Tower Defense > Add AR Rig To Game_AR Scene):
 // scan for a horizontal surface -> tap to place the battlefield -> play.
 //
 // The battlefield keeps exactly the same size in world units as in the classic
@@ -49,53 +49,29 @@ public class ARGameSetup : MonoBehaviour
 
   float WorldUnitsPerMeter => level.BoardWidth / boardWidthMeters;
 
+  // Returns null when Game_AR does not contain the AR rig.
   public static ARGameSetup Create(LevelLayout level)
   {
-    EnsureBackgroundRendererFeature();
+    XROrigin xrOrigin = FindFirstObjectByType<XROrigin>();
+    ARSession arSession = FindFirstObjectByType<ARSession>();
 
-    // The session starts disabled and is enabled once camera permission is granted (see Start).
-    GameObject sessionGO = new GameObject("AR Session");
-    sessionGO.SetActive(false);
-    ARSession arSession = sessionGO.AddComponent<ARSession>();
-    sessionGO.AddComponent<ARInputManager>();
+    if (xrOrigin == null || xrOrigin.Camera == null || arSession == null)
+    {
+      Debug.LogError("Game_AR has no AR Session / XR Origin. Run Tools > AR Tower Defense > Add AR Rig To Game_AR Scene.");
+      return null;
+    }
 
-    GameObject originGO = new GameObject("XR Origin (AR)");
-    originGO.SetActive(false);
-
-    GameObject offset = new GameObject("Camera Offset");
-    offset.transform.SetParent(originGO.transform, false);
-
-    GameObject cameraGO = new GameObject("AR Camera");
-    cameraGO.tag = "MainCamera";
-    cameraGO.transform.SetParent(offset.transform, false);
-
-    Camera cam = cameraGO.AddComponent<Camera>();
-    cam.clearFlags = CameraClearFlags.SolidColor;
-    cam.backgroundColor = Color.black;
+    Camera cam = xrOrigin.Camera;
+    cam.tag = "MainCamera";
     cam.nearClipPlane = 0.1f;
     cam.farClipPlane = 2000f;
-
-    cameraGO.AddComponent<AudioListener>();
-    // Camera manager and background start disabled and are enabled after the session runs (see Start),
-    // so the camera subsystem is always started on top of an active ARCore session.
-    ARCameraManager arCameraManager = cameraGO.AddComponent<ARCameraManager>();
-    arCameraManager.enabled = false;
-    ARCameraBackground arBackground = cameraGO.AddComponent<ARCameraBackground>();
-    arBackground.enabled = false;
-
-    var poseDriver = cameraGO.AddComponent<UnityEngine.InputSystem.XR.TrackedPoseDriver>();
-    poseDriver.positionInput = new InputActionProperty(CreatePoseAction("Position", "Vector3",
-        "<HandheldARInputDevice>/devicePosition", "<XRHMD>/centerEyePosition"));
-    poseDriver.rotationInput = new InputActionProperty(CreatePoseAction("Rotation", "Quaternion",
-        "<HandheldARInputDevice>/deviceRotation", "<XRHMD>/centerEyeRotation"));
-
-    XROrigin xrOrigin = originGO.AddComponent<XROrigin>();
-    xrOrigin.Camera = cam;
-    xrOrigin.CameraFloorOffsetObject = offset;
     xrOrigin.CameraYOffset = 0f;
 
-    ARRaycastManager raycaster = originGO.AddComponent<ARRaycastManager>();
-    ARPlaneManager planes = originGO.AddComponent<ARPlaneManager>();
+    GameObject originGO = xrOrigin.gameObject;
+    ARRaycastManager raycaster = originGO.GetComponent<ARRaycastManager>();
+    if (raycaster == null) raycaster = originGO.AddComponent<ARRaycastManager>();
+    ARPlaneManager planes = originGO.GetComponent<ARPlaneManager>();
+    if (planes == null) planes = originGO.AddComponent<ARPlaneManager>();
     planes.requestedDetectionMode = PlaneDetectionMode.Horizontal;
 
     ARGameSetup setup = originGO.AddComponent<ARGameSetup>();
@@ -105,11 +81,9 @@ public class ARGameSetup : MonoBehaviour
     setup.level = level;
     setup.ARCamera = cam;
     setup.session = arSession;
-    setup.cameraManager = arCameraManager;
+    setup.cameraManager = cam.GetComponent<ARCameraManager>();
 
     originGO.transform.localScale = Vector3.one * setup.WorldUnitsPerMeter;
-    originGO.SetActive(true);
-
     setup.reticle = CreateReticle(setup.WorldUnitsPerMeter);
     level.gameObject.SetActive(false);
 
@@ -134,7 +108,8 @@ public class ARGameSetup : MonoBehaviour
 
   IEnumerator Start()
   {
-    cameraManager.frameReceived += OnCameraFrame;
+    if (cameraManager != null)
+      cameraManager.frameReceived += OnCameraFrame;
 
     yield return RequestCameraPermission();
 
@@ -146,12 +121,6 @@ public class ARGameSetup : MonoBehaviour
           Application.productName + " → Άδειες και ξανανοίξτε την έκδοση AR.");
       yield break;
     }
-
-    session.gameObject.SetActive(true);
-    yield return null;
-
-    cameraManager.enabled = true;
-    ARCamera.GetComponent<ARCameraBackground>().enabled = true;
 
     if (ARSession.state == ARSessionState.None || ARSession.state == ARSessionState.CheckingAvailability)
       yield return ARSession.CheckAvailability();
@@ -235,7 +204,7 @@ public class ARGameSetup : MonoBehaviour
         "  |  pipeline: " + (pipeline != null ? pipeline.name : "none") +
         "  |  graphics: " + SystemInfo.graphicsDeviceType +
         "\nXR loader: " + LoaderName() +
-        "  |  camera subsystem: " + (cameraManager.subsystem == null ? "none" : cameraManager.subsystem.running ? "running" : "stopped") +
+        "  |  camera subsystem: " + (cameraManager == null || cameraManager.subsystem == null ? "none" : cameraManager.subsystem.running ? "running" : "stopped") +
         "  |  session subsystem: " + (session.subsystem == null ? "none" : session.subsystem.running ? "running" : "stopped");
   }
 
@@ -388,16 +357,6 @@ public class ARGameSetup : MonoBehaviour
         "Χάθηκε η παρακολούθηση του χώρου.\nΣτρέψτε την κάμερα προς το πεδίο και κινήστε αργά το κινητό.");
   }
 
-  static InputAction CreatePoseAction(string name, string controlType, params string[] bindings)
-  {
-    InputAction action = new InputAction(name, InputActionType.Value, expectedControlType: controlType);
-
-    foreach (string binding in bindings)
-      action.AddBinding(binding);
-
-    return action;
-  }
-
   static Transform CreateReticle(float unitsPerMeter)
   {
     GameObject reticle = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
@@ -409,43 +368,5 @@ public class ARGameSetup : MonoBehaviour
     reticle.GetComponent<Renderer>().sharedMaterial = GameMaterials.Transparent(new Color(0.3f, 0.8f, 1f, 0.6f));
     reticle.SetActive(false);
     return reticle.transform;
-  }
-
-  // URP needs the "AR Background Renderer Feature" to draw the camera image. The editor
-  // setup (Tools > AR Tower Defense > Setup Project) adds it to the renderer assets; this is
-  // a safety net for player builds made without running the setup.
-  static void EnsureBackgroundRendererFeature()
-  {
-#if !UNITY_EDITOR
-    try
-    {
-      Type featureType = Type.GetType("UnityEngine.XR.ARFoundation.ARBackgroundRendererFeature, Unity.XR.ARFoundation");
-      var pipeline = GraphicsSettings.currentRenderPipeline as UniversalRenderPipelineAsset;
-
-      if (featureType == null || pipeline == null)
-        return;
-
-      FieldInfo field = typeof(UniversalRenderPipelineAsset).GetField("m_RendererDataList", BindingFlags.NonPublic | BindingFlags.Instance);
-
-      if (!(field?.GetValue(pipeline) is ScriptableRendererData[] renderers))
-        return;
-
-      foreach (ScriptableRendererData data in renderers)
-      {
-        if (data == null || data.rendererFeatures.Any(f => f != null && f.GetType() == featureType))
-          continue;
-
-        var feature = (ScriptableRendererFeature)ScriptableObject.CreateInstance(featureType);
-        feature.name = "AR Background Renderer Feature";
-        data.rendererFeatures.Add(feature);
-        data.SetDirty();
-        Debug.LogWarning("AR Background Renderer Feature was missing from " + data.name + " and was added at runtime.");
-      }
-    }
-    catch (Exception e)
-    {
-      Debug.LogWarning("Could not verify the AR Background Renderer Feature: " + e.Message);
-    }
-#endif
   }
 }
