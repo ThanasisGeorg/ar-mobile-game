@@ -76,8 +76,12 @@ public class ARGameSetup : MonoBehaviour
     cam.farClipPlane = 2000f;
 
     cameraGO.AddComponent<AudioListener>();
+    // Camera manager and background start disabled and are enabled after the session runs (see Start),
+    // so the camera subsystem is always started on top of an active ARCore session.
     ARCameraManager arCameraManager = cameraGO.AddComponent<ARCameraManager>();
-    cameraGO.AddComponent<ARCameraBackground>();
+    arCameraManager.enabled = false;
+    ARCameraBackground arBackground = cameraGO.AddComponent<ARCameraBackground>();
+    arBackground.enabled = false;
 
     var poseDriver = cameraGO.AddComponent<UnityEngine.InputSystem.XR.TrackedPoseDriver>();
     poseDriver.positionInput = new InputActionProperty(CreatePoseAction("Position", "Vector3",
@@ -144,6 +148,10 @@ public class ARGameSetup : MonoBehaviour
     }
 
     session.gameObject.SetActive(true);
+    yield return null;
+
+    cameraManager.enabled = true;
+    ARCamera.GetComponent<ARCameraBackground>().enabled = true;
 
     if (ARSession.state == ARSessionState.None || ARSession.state == ARSessionState.CheckingAvailability)
       yield return ARSession.CheckAvailability();
@@ -225,7 +233,20 @@ public class ARGameSetup : MonoBehaviour
         "  |  background: " + (background != null && background.enabled ? "on" : "off") +
         "  |  AR renderer feature: " + feature +
         "  |  pipeline: " + (pipeline != null ? pipeline.name : "none") +
-        "  |  graphics: " + SystemInfo.graphicsDeviceType;
+        "  |  graphics: " + SystemInfo.graphicsDeviceType +
+        "\nXR loader: " + LoaderName() +
+        "  |  camera subsystem: " + (cameraManager.subsystem == null ? "none" : cameraManager.subsystem.running ? "running" : "stopped") +
+        "  |  session subsystem: " + (session.subsystem == null ? "none" : session.subsystem.running ? "running" : "stopped");
+  }
+
+  static string LoaderName()
+  {
+    var settings = UnityEngine.XR.Management.XRGeneralSettings.Instance;
+
+    if (settings == null || settings.Manager == null)
+      return "no XR settings";
+
+    return settings.Manager.activeLoader != null ? settings.Manager.activeLoader.name : "NOT initialized";
   }
 
   void OnDestroy()
