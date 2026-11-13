@@ -57,9 +57,12 @@ public class GameBootstrap : MonoBehaviour
     }
     else
     {
-      // The AR rig brings its own camera; scene cameras would compete for "MainCamera".
+      // The AR rig brings its own camera; other scene cameras would compete for "MainCamera".
       foreach (Camera existing in FindObjectsByType<Camera>(FindObjectsSortMode.None))
-        existing.gameObject.SetActive(false);
+      {
+        if (existing.GetComponentInParent<Unity.XR.CoreUtils.XROrigin>() == null)
+          existing.gameObject.SetActive(false);
+      }
 
       ar = ARGameSetup.Create(Level);
       placement.cam = ar.ARCamera;

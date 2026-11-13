@@ -44,6 +44,7 @@ public class ARGameSetup : MonoBehaviour
   private int cameraFrames;
   private string permissionStatus = "-";
   private float diagnosticsTimer;
+  private bool usesSceneRig;
 
   static readonly List<ARRaycastHit> hits = new List<ARRaycastHit>();
 
@@ -52,6 +53,13 @@ public class ARGameSetup : MonoBehaviour
   public static ARGameSetup Create(LevelLayout level)
   {
     EnsureBackgroundRendererFeature();
+
+    // Prefer the rig placed in Game_AR by Tools > AR Tower Defense > Add AR Rig To Game_AR Scene
+    // (Unity's own "AR Session" and "XR Origin (Mobile AR)" objects, configured by the editor).
+    XROrigin sceneOrigin = FindFirstObjectByType<XROrigin>();
+
+    if (sceneOrigin != null && sceneOrigin.Camera != null)
+      return UseSceneRig(level, sceneOrigin);
 
     // The session starts disabled and is enabled once camera permission is granted (see Start).
     GameObject sessionGO = new GameObject("AR Session");
@@ -110,6 +118,51 @@ public class ARGameSetup : MonoBehaviour
     originGO.transform.localScale = Vector3.one * setup.WorldUnitsPerMeter;
     originGO.SetActive(true);
 
+    setup.reticle = CreateReticle(setup.WorldUnitsPerMeter);
+    level.gameObject.SetActive(false);
+
+    return setup;
+  }
+
+  static ARGameSetup UseSceneRig(LevelLayout level, XROrigin xrOrigin)
+  {
+    ARSession arSession = FindFirstObjectByType<ARSession>();
+
+    if (arSession == null)
+    {
+      GameObject sessionGO = new GameObject("AR Session");
+      arSession = sessionGO.AddComponent<ARSession>();
+      sessionGO.AddComponent<ARInputManager>();
+    }
+
+    Camera cam = xrOrigin.Camera;
+    cam.tag = "MainCamera";
+    cam.nearClipPlane = 0.1f;
+    cam.farClipPlane = 2000f;
+    xrOrigin.CameraYOffset = 0f;
+
+    ARCameraManager arCameraManager = cam.GetComponent<ARCameraManager>();
+    if (arCameraManager == null) arCameraManager = cam.gameObject.AddComponent<ARCameraManager>();
+    if (cam.GetComponent<ARCameraBackground>() == null) cam.gameObject.AddComponent<ARCameraBackground>();
+
+    GameObject originGO = xrOrigin.gameObject;
+    ARRaycastManager raycaster = originGO.GetComponent<ARRaycastManager>();
+    if (raycaster == null) raycaster = originGO.AddComponent<ARRaycastManager>();
+    ARPlaneManager planes = originGO.GetComponent<ARPlaneManager>();
+    if (planes == null) planes = originGO.AddComponent<ARPlaneManager>();
+    planes.requestedDetectionMode = PlaneDetectionMode.Horizontal;
+
+    ARGameSetup setup = originGO.AddComponent<ARGameSetup>();
+    setup.origin = xrOrigin;
+    setup.raycastManager = raycaster;
+    setup.planeManager = planes;
+    setup.level = level;
+    setup.ARCamera = cam;
+    setup.session = arSession;
+    setup.cameraManager = arCameraManager;
+    setup.usesSceneRig = true;
+
+    originGO.transform.localScale = Vector3.one * setup.WorldUnitsPerMeter;
     setup.reticle = CreateReticle(setup.WorldUnitsPerMeter);
     level.gameObject.SetActive(false);
 
@@ -234,7 +287,8 @@ public class ARGameSetup : MonoBehaviour
         "  |  AR renderer feature: " + feature +
         "  |  pipeline: " + (pipeline != null ? pipeline.name : "none") +
         "  |  graphics: " + SystemInfo.graphicsDeviceType +
-        "\nXR loader: " + LoaderName() +
+        "\nrig: " + (usesSceneRig ? "scene" : "runtime") +
+        "  |  XR loader: " + LoaderName() +
         "  |  camera subsystem: " + (cameraManager.subsystem == null ? "none" : cameraManager.subsystem.running ? "running" : "stopped") +
         "  |  session subsystem: " + (session.subsystem == null ? "none" : session.subsystem.running ? "running" : "stopped");
   }
