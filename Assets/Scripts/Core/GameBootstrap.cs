@@ -65,7 +65,7 @@ public class GameBootstrap : MonoBehaviour
       }
 
       ar = ARGameSetup.Create(Level);
-      placement.cam = ar.ARCamera;
+      placement.cam = ar != null ? ar.ARCamera : null;
     }
 
     SessionTelemetry telemetry = new GameObject("Session Telemetry").AddComponent<SessionTelemetry>();
@@ -74,7 +74,16 @@ public class GameBootstrap : MonoBehaviour
     GameHUD hud = GameHUD.Create(mode, gm, economy, waves, placement, telemetry);
 
     if (ar != null)
+    {
       ar.Init(gm, hud, telemetry);
+    }
+    else if (mode == GameMode.AR)
+    {
+      Level.gameObject.SetActive(false);
+      hud.SetStartAvailable(false);
+      hud.SetInstruction("Η σκηνή AR δεν έχει ρυθμιστεί: στο Unity εκτελέστε Tools → AR Tower Defense → " +
+          "Add AR Rig To Game_AR Scene και ξαναφτιάξτε το build. Πατήστε «Μενού» για επιστροφή.");
+    }
   }
 
   static T Ensure<T>(string name) where T : Component
