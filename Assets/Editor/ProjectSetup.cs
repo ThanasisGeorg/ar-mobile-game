@@ -115,6 +115,9 @@ public static class ProjectSetup
     PlayerSettings.SetUseDefaultGraphicsAPIs(BuildTarget.Android, false);
     PlayerSettings.SetGraphicsAPIs(BuildTarget.Android, new[] { GraphicsDeviceType.OpenGLES3 });
 
+    // ARCore needs the classic Activity entry point; with GameActivity the camera may deliver no frames.
+    PlayerSettings.Android.applicationEntry = AndroidApplicationEntry.Activity;
+
     PlayerSettings.defaultInterfaceOrientation = UIOrientation.AutoRotation;
     PlayerSettings.allowedAutorotateToPortrait = false;
     PlayerSettings.allowedAutorotateToPortraitUpsideDown = false;
