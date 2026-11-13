@@ -122,3 +122,5 @@ InitTestScene*.unity*
 /Analysis/synthetic_data/
 /Analysis/data/
 __pycache__/
+
+.fake
